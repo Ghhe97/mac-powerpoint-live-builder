@@ -1,0 +1,1 @@
+"""PowerPoint live MCP package."""

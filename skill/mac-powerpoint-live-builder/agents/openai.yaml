@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mac PowerPoint Live Builder"
+  short_description: "Build editable PowerPoint decks live on Mac"
+  default_prompt: "Use $mac-powerpoint-live-builder to create a high-density editable PowerPoint deck in the live Mac PowerPoint window."
