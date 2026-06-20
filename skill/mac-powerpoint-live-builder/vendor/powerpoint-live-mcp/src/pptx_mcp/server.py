@@ -76,6 +76,22 @@ def _osascript_error_message(returncode: int, detail: str) -> str:
             "launcher cannot bring PowerPoint to the foreground; wrap activate "
             "in try/end try or continue without foreground focus."
         )
+    elif returncode == 124 or "timed out" in detail.lower():
+        bridge_url = os.environ.get(BRIDGE_URL_ENV, "").strip()
+        if bridge_url:
+            hint = (
+                " Hint: the PowerPoint bridge is reachable, but the app that "
+                "started the bridge may not be allowed to control Microsoft "
+                "PowerPoint. If you launched the bridge from Terminal, enable "
+                "System Settings > Privacy & Security > Automation > Terminal > "
+                "Microsoft PowerPoint, then restart the bridge."
+            )
+        else:
+            hint = (
+                " Hint: osascript timed out while talking to PowerPoint. Check "
+                "macOS Automation permission for the launching app and make sure "
+                "PowerPoint is responsive."
+            )
     elif "-10004" in detail or "not authorized" in detail.lower() or "权限" in detail:
         bridge_url = os.environ.get(BRIDGE_URL_ENV, "").strip()
         if bridge_url:

@@ -154,6 +154,12 @@ WorkBuddy 风格的 `mcp.json` 通常需要类似下面的 server block：
 ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
 ```
 
+注意：因为这个 bridge 是从终端启动的，所以 macOS 里还需要允许“终端”控制 Microsoft PowerPoint：
+
+```text
+系统设置 -> 隐私与安全性 -> 自动化 -> 终端 -> Microsoft PowerPoint
+```
+
 再写入 WorkBuddy bridge 配置：
 
 ```bash
@@ -167,6 +173,8 @@ WorkBuddy 风格的 `mcp.json` 通常需要类似下面的 server block：
 ```
 
 如果这个验证通过，才说明不是只“列出了工具”，而是真的可以 live 控制 PowerPoint。
+
+如果 bridge 模式报 `osascript timed out after 60s`，通常就是上面的“终端 -> Microsoft PowerPoint”权限还没打开。打开后重启 bridge，再跑验证。
 
 如果要确认不只是“能列出工具”，还是真的能控制 PowerPoint，可以运行：
 
@@ -242,6 +250,8 @@ macOS 会保护应用之间的自动化控制。第一次让 Agent 控制 PowerP
 打开 macOS：系统设置 -> 隐私与安全性 -> 自动化，确认启动 MCP 的 Agent 应用被允许控制 Microsoft PowerPoint。
 
 如果你已经打开权限但 WorkBuddy 仍然失败，通常不是 PowerPoint 或 MCP 坏了，而是 WorkBuddy 的 MCP 子进程在沙盒里。请使用上面的 WorkBuddy 桥接模式。
+
+如果桥接模式从终端启动后变成超时，请确认“终端”也被允许控制 Microsoft PowerPoint。
 
 ### 如果 live 失败，能不能先离线生成 PPTX？
 
@@ -427,6 +437,13 @@ Keep this running in a Terminal window:
 ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
 ```
 
+Because the bridge is launched by Terminal, macOS must also allow Terminal to
+control Microsoft PowerPoint:
+
+```text
+System Settings -> Privacy & Security -> Automation -> Terminal -> Microsoft PowerPoint
+```
+
 Write WorkBuddy bridge config:
 
 ```bash
@@ -441,6 +458,10 @@ Then restart WorkBuddy. Verify:
 
 Only treat live mode as working after this smoke test creates and closes a tiny
 PowerPoint presentation.
+
+If bridge mode reports `osascript timed out after 60s`, Terminal is usually not
+authorized to control PowerPoint. Enable that checkbox, restart the bridge, and
+run the smoke test again.
 
 To verify real PowerPoint control, not just tool listing, run:
 
@@ -508,6 +529,8 @@ PowerPoint rejected foreground activation. Update to the latest MCP server; it w
 Open macOS System Settings -> Privacy & Security -> Automation, then allow the Agent app that launched MCP to control Microsoft PowerPoint.
 
 If WorkBuddy still fails after that checkbox is enabled, use WorkBuddy bridge mode. The likely blocker is the MCP subprocess sandbox, not the PowerPoint MCP code itself.
+
+If bridge mode is launched from Terminal and then times out, also allow Terminal to control Microsoft PowerPoint.
 
 ### Can I fall back to offline PPTX generation?
 

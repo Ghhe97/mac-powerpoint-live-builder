@@ -86,6 +86,11 @@ Then restart WorkBuddy and run:
 ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doctor --smoke-powerpoint --bridge-mode
 ```
 
+If bridge mode reports `osascript timed out after 60s`, the bridge process is
+running but its launcher is probably not allowed to control PowerPoint. For a
+bridge started by `start_bridge.command`, enable macOS Automation permission for
+Terminal to control Microsoft PowerPoint, then restart the bridge.
+
 `scripts/check_pptx_mcp.py` verifies that a server executable starts and exposes
 the expected `pptx_*` live-build tools. Add `--smoke-powerpoint` only when you
 want it to create and close a tiny PowerPoint presentation through MCP.

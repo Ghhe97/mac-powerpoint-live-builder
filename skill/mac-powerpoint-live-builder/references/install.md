@@ -44,6 +44,11 @@ available.
    ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --write-workbuddy-config --bridge-mode
    ```
 
+   The app that starts the bridge also needs Automation permission. If the bridge
+   is launched by `start_bridge.command`, macOS treats Terminal as the launcher:
+   enable System Settings > Privacy & Security > Automation > Terminal >
+   Microsoft PowerPoint.
+
 9. For real PowerPoint control diagnostics, run:
 
    ```bash
@@ -140,5 +145,9 @@ POWERPOINT_LIVE_BRIDGE_TOKEN_FILE=~/.local/share/powerpoint-live-mcp/bridge_toke
   AppleScript to control Microsoft PowerPoint. If that checkbox is already enabled
   for the Agent but smoke still fails, the Agent is likely running MCP in a
   restricted sandbox; use bridge mode.
+- `osascript timed out after 60s` in bridge mode: the bridge is reachable, but
+  the app that launched the bridge may not be authorized for PowerPoint
+  Automation. For `start_bridge.command`, enable Terminal > Microsoft PowerPoint,
+  restart the bridge, then rerun the smoke test.
 - If live control fails and the Agent uses `python-pptx` or another file-only
   method, label the result as a non-live fallback.

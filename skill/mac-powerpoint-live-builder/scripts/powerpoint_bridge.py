@@ -49,7 +49,11 @@ def run_osascript(script: str, timeout: int) -> dict[str, Any]:
             "ok": False,
             "returncode": 124,
             "stdout": "",
-            "stderr": f"osascript timed out after {timeout}s",
+            "stderr": (
+                f"osascript timed out after {timeout}s. If this bridge was launched "
+                "from Terminal, enable System Settings > Privacy & Security > "
+                "Automation > Terminal > Microsoft PowerPoint, then restart the bridge."
+            ),
         }
     return {
         "ok": result.returncode == 0,
@@ -124,6 +128,9 @@ def main() -> int:
     print("Set MCP env:")
     print(f"  POWERPOINT_LIVE_BRIDGE_URL=http://{args.host}:{args.port}")
     print(f"  POWERPOINT_LIVE_BRIDGE_TOKEN_FILE={args.token_file.expanduser()}")
+    print("Automation note:")
+    print("  The app that starts this bridge must be allowed to control Microsoft PowerPoint.")
+    print("  If launched from Terminal, enable Automation > Terminal > Microsoft PowerPoint.")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
