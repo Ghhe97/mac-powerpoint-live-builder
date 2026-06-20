@@ -8,6 +8,7 @@ library until the bundled MCP package is installed into its own virtualenv.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
 import shutil
@@ -88,18 +89,32 @@ def check_pdftoppm() -> Optional[str]:
     return shutil.which("pdftoppm")
 
 
+def mcp_path_value(exe: Path) -> str:
+    return ":".join(
+        [
+            str(exe.parent),
+            str(CODEX_RUNTIME / "bin"),
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/usr/bin",
+            "/bin",
+            "/usr/sbin",
+            "/sbin",
+        ]
+    )
+
+
+def mcp_server_config(exe: Path) -> dict[str, object]:
+    return {
+        "command": str(exe),
+        "env": {
+            "PATH": mcp_path_value(exe),
+        },
+    }
+
+
 def codex_snippet(exe: Path) -> str:
-    path_parts = [
-        str(exe.parent),
-        str(CODEX_RUNTIME / "bin"),
-        "/opt/homebrew/bin",
-        "/usr/local/bin",
-        "/usr/bin",
-        "/bin",
-        "/usr/sbin",
-        "/sbin",
-    ]
-    path_value = ":".join(path_parts)
+    path_value = mcp_path_value(exe)
     return f"""{MARKER_BEGIN}
 [mcp_servers.powerpoint_live]
 command = "{exe}"
@@ -110,6 +125,38 @@ tool_timeout_sec = 240
 PATH = "{path_value}"
 {MARKER_END}
 """
+
+
+def generic_json_snippet(exe: Path) -> str:
+    return json.dumps(
+        {
+            "mcpServers": {
+                "powerpoint-live-mcp": mcp_server_config(exe),
+            }
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def workbuddy_json_snippet(exe: Path) -> str:
+    return json.dumps(
+        {
+            "powerpoint-live-mcp": mcp_server_config(exe),
+        },
+        ensure_ascii=False,
+        indent=2,
+    )
+
+
+def print_config_snippets(exe: Path) -> None:
+    print("\nCodex config.toml snippet:\n")
+    print(codex_snippet(exe))
+    print("\nGeneric stdio MCP JSON example:\n")
+    print(generic_json_snippet(exe))
+    print("\nWorkBuddy mcp.json server block example:\n")
+    print(workbuddy_json_snippet(exe))
+    print("\nNote: many Agent apps only load MCP servers at startup. Restart the Agent after updating config.")
 
 
 def write_codex_config(exe: Path) -> None:
@@ -126,10 +173,57 @@ def write_codex_config(exe: Path) -> None:
     print(f"Wrote Codex MCP config: {CODEX_CONFIG}")
 
 
-def verify_tools(py: Path, exe: Path) -> int:
+def verify_tools(py: Path, exe: Path, *, smoke_powerpoint: bool = False) -> int:
     checker = SKILL_ROOT / "scripts" / "check_pptx_mcp.py"
-    result = subprocess.run([str(py), str(checker), str(exe)], text=True, check=False)
+    cmd = [str(py), str(checker), str(exe)]
+    if smoke_powerpoint:
+        cmd.append("--smoke-powerpoint")
+    result = subprocess.run(cmd, text=True, check=False)
     return result.returncode
+
+
+def doctor(home: Path, *, smoke_powerpoint: bool) -> int:
+    print("PowerPoint live MCP doctor")
+    print()
+    ok = True
+    if platform.system() != "Darwin":
+        print("FAIL macOS: live PowerPoint control requires macOS.")
+        ok = False
+    else:
+        print("OK macOS")
+
+    if check_powerpoint():
+        print("OK Microsoft PowerPoint found")
+    else:
+        print("FAIL Microsoft PowerPoint not found at /Applications/Microsoft PowerPoint.app")
+        ok = False
+
+    pdftoppm = check_pdftoppm()
+    if pdftoppm:
+        print(f"OK pdftoppm found: {pdftoppm}")
+    else:
+        print("WARN pdftoppm not found. Install Homebrew poppler for thumbnail export.")
+
+    _, py, exe = venv_paths(home)
+    if not py.exists() or not exe.exists():
+        print(f"FAIL MCP server is not installed at {home}")
+        print("Run this installer without --check/--doctor first.")
+        print_config_snippets(exe)
+        return 1
+
+    print(f"OK MCP python: {py}")
+    print(f"OK MCP command: {exe}")
+    print()
+    print("Checking MCP tool inventory" + (" and live PowerPoint smoke" if smoke_powerpoint else "") + "...")
+    rc = verify_tools(py, exe, smoke_powerpoint=smoke_powerpoint)
+    if rc != 0:
+        ok = False
+        if smoke_powerpoint:
+            print()
+            print("If the failure mentions -1708, PowerPoint rejected foreground activation.")
+            print("If the failure mentions -10004 or not authorized, check macOS Automation permissions.")
+    print_config_snippets(exe)
+    return 0 if ok else 1
 
 
 def install(home: Path) -> tuple[Path, Path]:
@@ -162,8 +256,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--home", type=Path, default=DEFAULT_HOME, help="Install location for the MCP venv.")
     parser.add_argument("--check", action="store_true", help="Only check the default installation.")
+    parser.add_argument("--doctor", action="store_true", help="Run environment diagnostics for the installed MCP server.")
+    parser.add_argument(
+        "--smoke-powerpoint",
+        action="store_true",
+        help="With --check or --doctor, create and close a tiny presentation through MCP.",
+    )
     parser.add_argument("--write-codex-config", action="store_true", help="Write/update ~/.codex/config.toml.")
-    parser.add_argument("--print-config", action="store_true", help="Print a Codex config snippet.")
+    parser.add_argument("--print-config", action="store_true", help="Print Codex, generic MCP JSON, and WorkBuddy config snippets.")
     args = parser.parse_args()
 
     if platform.system() != "Darwin":
@@ -182,23 +282,26 @@ def main() -> int:
         print("Homebrew command: brew install poppler")
 
     _, py, exe = venv_paths(args.home)
+    if args.doctor:
+        return doctor(args.home, smoke_powerpoint=args.smoke_powerpoint)
+
     if args.check:
         if not exe.exists() or not py.exists():
             print(f"MCP not installed at {args.home}")
             return 1
-        return verify_tools(py, exe)
+        return verify_tools(py, exe, smoke_powerpoint=args.smoke_powerpoint)
 
     py, exe = install(args.home)
     if args.write_codex_config:
         write_codex_config(exe)
     if args.print_config or not args.write_codex_config:
-        print("\nCodex config snippet:\n")
-        print(codex_snippet(exe))
+        print_config_snippets(exe)
     print("Verifying MCP tool inventory...")
     rc = verify_tools(py, exe)
     if rc != 0:
         return rc
     print("\nInstallation complete. Restart the Agent app after adding/updating MCP config.")
+    print("Use --doctor --smoke-powerpoint to verify real PowerPoint control after restarting/configuring your Agent.")
     print("On first use, allow Automation permission when macOS asks to control Microsoft PowerPoint.")
     return 0
 

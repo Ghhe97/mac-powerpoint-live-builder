@@ -75,8 +75,22 @@ def _run_osascript(script: str, timeout: int = 60) -> str:
     except subprocess.TimeoutExpired as e:
         raise RuntimeError(f"osascript timed out after {timeout}s") from e
     if result.returncode != 0:
+        detail = result.stderr.strip() or result.stdout.strip()
+        hint = ""
+        if "-1708" in detail:
+            hint = (
+                " Hint: PowerPoint rejected 'activate'. This usually means the "
+                "launcher cannot bring PowerPoint to the foreground; wrap activate "
+                "in try/end try or continue without foreground focus."
+            )
+        elif "-10004" in detail or "not authorized" in detail.lower() or "权限" in detail:
+            hint = (
+                " Hint: macOS Automation may be blocking AppleEvents. Check "
+                "System Settings > Privacy & Security > Automation for the app "
+                "that launched this MCP server, then allow Microsoft PowerPoint."
+            )
         raise RuntimeError(
-            f"osascript failed (exit {result.returncode}): {result.stderr.strip() or result.stdout.strip()}"
+            f"osascript failed (exit {result.returncode}): {detail}{hint}"
         )
     return result.stdout.strip()
 
@@ -649,7 +663,9 @@ def pptx_focus_slide(slide_index: int) -> dict[str, Any]:
     """
     script = f'''
 tell application "Microsoft PowerPoint"
-    activate
+    try
+        activate
+    end try
     go to slide (view of active window) number {int(slide_index)}
     return slide index of slide {int(slide_index)} of active presentation
 end tell
@@ -1960,7 +1976,9 @@ def pptx_copy_slide_from_pptx(
 
     script = f'''
 tell application "Microsoft PowerPoint"
-    activate
+    try
+        activate
+    end try
 {target_resolve}
     if targetName is "{safe_source_name}" then
         error "target and source are the same file — use pptx_add_slide_from_template for in-deck clones"
@@ -2026,7 +2044,9 @@ def pptx_create_presentation(
         safe_path = _escape_applescript_string(target)
         script = f'''
 tell application "Microsoft PowerPoint"
-    activate
+    try
+        activate
+    end try
     set p to make new presentation
     save p in (POSIX file "{safe_path}")
     return (name of p as text) & "|" & (count of slides of p)
@@ -2035,7 +2055,9 @@ end tell
     else:
         script = '''
 tell application "Microsoft PowerPoint"
-    activate
+    try
+        activate
+    end try
     set p to make new presentation
     return (name of p as text) & "|" & (count of slides of p)
 end tell
@@ -2062,7 +2084,9 @@ def pptx_open_presentation(pptx_path: str) -> dict[str, Any]:
     safe_name = _escape_applescript_string(filename)
     script = f'''
 tell application "Microsoft PowerPoint"
-    activate
+    try
+        activate
+    end try
     set wasOpen to false
     repeat with i from 1 to count of presentations
         if (name of presentation i) is "{safe_name}" then

@@ -3,10 +3,13 @@
 
 Usage:
     python scripts/check_pptx_mcp.py /absolute/path/to/pptx-mcp
+    python scripts/check_pptx_mcp.py /absolute/path/to/pptx-mcp --smoke-powerpoint
 """
 
 from __future__ import annotations
 
+import argparse
+import json
 import os
 import sys
 from pathlib import Path
@@ -29,12 +32,28 @@ REQUIRED = {
 }
 
 
-async def main() -> int:
-    if len(sys.argv) != 2:
-        print("usage: check_pptx_mcp.py /absolute/path/to/pptx-mcp", file=sys.stderr)
-        return 2
+def _result_text(result: object) -> str:
+    parts: list[str] = []
+    for item in getattr(result, "content", []) or []:
+        text = getattr(item, "text", None)
+        if text is not None:
+            parts.append(text)
+        else:
+            parts.append(repr(item))
+    return "\n".join(parts)
 
-    server = Path(sys.argv[1]).expanduser().resolve()
+
+async def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("server", type=Path, help="Absolute path to the MCP server executable.")
+    parser.add_argument(
+        "--smoke-powerpoint",
+        action="store_true",
+        help="Also call pptx_create_presentation through MCP, then close it without saving.",
+    )
+    args = parser.parse_args()
+
+    server = args.server.expanduser().resolve()
     if not server.exists():
         print(f"server executable not found: {server}", file=sys.stderr)
         return 1
@@ -47,15 +66,44 @@ async def main() -> int:
             result = await session.list_tools()
             names = sorted(tool.name for tool in result.tools)
 
-    pptx_names = [name for name in names if name.startswith("pptx_")]
-    missing = sorted(REQUIRED - set(names))
-    print(f"tool_count={len(names)}")
-    print(f"pptx_tool_count={len(pptx_names)}")
-    for name in pptx_names:
-        print(name)
-    if missing:
-        print("missing_required=" + ",".join(missing), file=sys.stderr)
-        return 1
+            pptx_names = [name for name in names if name.startswith("pptx_")]
+            missing = sorted(REQUIRED - set(names))
+            print(f"tool_count={len(names)}")
+            print(f"pptx_tool_count={len(pptx_names)}")
+            for name in pptx_names:
+                print(name)
+            if missing:
+                print("missing_required=" + ",".join(missing), file=sys.stderr)
+                return 1
+
+            if args.smoke_powerpoint:
+                print("smoke_powerpoint=starting")
+                create_result = await session.call_tool("pptx_create_presentation", {})
+                if getattr(create_result, "isError", False):
+                    print("pptx_create_presentation failed:", file=sys.stderr)
+                    print(_result_text(create_result), file=sys.stderr)
+                    return 1
+                create_text = _result_text(create_result)
+                print("pptx_create_presentation ok")
+                print(create_text)
+                presentation_name: str | None = None
+                try:
+                    payload = json.loads(create_text)
+                    if isinstance(payload, dict):
+                        presentation_name = payload.get("name")
+                except json.JSONDecodeError:
+                    presentation_name = None
+                close_args = {"save_changes": False}
+                if presentation_name:
+                    close_args["presentation_name"] = presentation_name
+                close_result = await session.call_tool("pptx_close_presentation", close_args)
+                if getattr(close_result, "isError", False):
+                    print("pptx_close_presentation failed after create smoke:", file=sys.stderr)
+                    print(_result_text(close_result), file=sys.stderr)
+                    return 1
+                print("pptx_close_presentation ok")
+                print(_result_text(close_result))
+
     return 0
 
 

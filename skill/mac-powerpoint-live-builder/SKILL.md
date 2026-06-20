@@ -14,23 +14,27 @@ launches the MCP server.
 
 ## Workflow
 
-1. Check for live `pptx_*` MCP tools in the current runtime. If they are missing,
-   read `references/install.md` and run the bundled installer/check flow before
-   attempting to create slides.
+1. Check for live `pptx_*` MCP tools in the current Agent runtime. Distinguish:
+   installed MCP server, server tool inventory, and tools actually mounted in the
+   current Agent session. If runtime tools are missing, read `references/install.md`;
+   do not treat installer self-check success as proof that this session can call MCP.
 2. Confirm the user wants a live Mac PowerPoint build, then infer slide count,
    audience, language, density, and output tone from the prompt.
 3. If the request depends on current market, legal, policy, financial, or product
    facts, browse and cite current sources before building.
-4. Draft a slide plan first: one concise title, a high-density layout model, core
+4. Before a large build, prefer a real smoke check through MCP when available:
+   `pptx_create_presentation`, then close the empty presentation without saving. If
+   only the bundled checker is available, run it with `--smoke-powerpoint`.
+5. Draft a slide plan first: one concise title, a high-density layout model, core
    facts, and source footer for each slide.
-5. Generate a live sequence that starts with `create_presentation`, then explicitly
+6. Generate a live sequence that starts with `create_presentation`, then explicitly
    adds one blank slide before building each slide. Some PowerPoint for Mac builds
    create new presentations with zero slides.
-6. Use named shapes/text boxes for every element. Names are required for later
+7. Use named shapes/text boxes for every element. Names are required for later
    edits and for reliable styling after creation.
-7. Execute the sequence through MCP so the PowerPoint window visibly mutates.
-8. Save the deck, export each slide thumbnail, and export an overview image.
-9. Inspect thumbnails. Fix overlap, illegible text, weak contrast, bad colors,
+8. Execute the sequence through MCP so the PowerPoint window visibly mutates.
+9. Save the deck, export each slide thumbnail, and export an overview image.
+10. Inspect thumbnails. Fix overlap, illegible text, weak contrast, bad colors,
    missing sources, and low information density before final delivery.
 
 For exact sequence patterns, QA checks, and Mac-specific pitfalls, read
@@ -46,6 +50,9 @@ For exact sequence patterns, QA checks, and Mac-specific pitfalls, read
 - Keep the first visual pass truthful: if data is approximate, label it as
   approximate; if sources differ by definition, note the definition.
 - Do not claim success until exported thumbnails have been visually inspected.
+- If live PowerPoint control fails and another method is used, explicitly label the
+  output as a non-live fallback. Never imply PowerPoint visibly built the deck unless
+  MCP/AppleScript actually did so in the running app.
 
 ## Tooling
 
@@ -57,11 +64,24 @@ python ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --writ
 ```
 
 If the current Agent product is not Codex, run the installer without
-`--write-codex-config` and copy the printed stdio command into that product's MCP
-settings.
+`--write-codex-config` and copy the printed stdio JSON or WorkBuddy block into
+that product's MCP settings. Restart the Agent if it loads MCP servers only at
+startup.
 
 `scripts/check_pptx_mcp.py` verifies that a server executable starts and exposes
-the expected `pptx_*` live-build tools.
+the expected `pptx_*` live-build tools. Add `--smoke-powerpoint` only when you
+want it to create and close a tiny PowerPoint presentation through MCP.
+
+For diagnostics:
+
+```bash
+python ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doctor --smoke-powerpoint
+```
+
+If `osascript` reports `-1708`, suspect foreground activation and retry with the
+updated server that wraps `activate` in `try/end try`. If it reports `-10004` or
+`not authorized`, check macOS Automation permission for the app that launched the
+MCP server.
 
 Expected core tools:
 

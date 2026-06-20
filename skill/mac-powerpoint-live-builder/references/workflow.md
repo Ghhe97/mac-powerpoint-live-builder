@@ -21,6 +21,9 @@ batch by slide if one call becomes slow or hard to debug.
 
 - New presentations can start with zero slides. Always call `add_slide` before
   targeting slide 1.
+- `activate` can fail in background Agent environments with `-1708`. The server
+  should wrap activation in `try/end try`; do not use a bare `activate` as the
+  smoke test.
 - Newly created PowerPoint shape references can be unstable. The MCP server should
   name each shape, refetch it by `name`, then style it. If direct styling appears
   ignored, verify the server does this.
@@ -30,6 +33,9 @@ batch by slide if one call becomes slow or hard to debug.
   temp path internally, then copy outputs to the requested path.
 - macOS may prompt for Automation permission. If tools fail with permission or
   AppleEvent errors, ask the user to allow the launcher to control PowerPoint.
+- A successful MCP inventory check only proves the server can list tools. It does
+  not prove the active Agent session can call those tools or that PowerPoint
+  Automation works. Use a real MCP smoke when diagnosing live control.
 
 ## Dense Deck Layout Patterns
 
@@ -47,6 +53,8 @@ Use 16:9 coordinates in points. A common canvas is `960 x 540`.
 Inspect each exported thumbnail:
 
 - Slide is nonblank and saved as editable `.pptx`.
+- Deck was built live through PowerPoint MCP/AppleScript. If not, call it a
+  non-live fallback in the final answer.
 - No obvious overlap, clipping, or text outside panels.
 - Important numbers and headings remain readable at overview scale.
 - Colors match expected theme; sample pixels if a critical brand/research color
