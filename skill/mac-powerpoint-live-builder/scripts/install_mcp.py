@@ -15,6 +15,8 @@ import shutil
 import subprocess
 import sys
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -361,6 +363,71 @@ def verify_tools(
     return result.returncode
 
 
+def _bridge_token(bridge_token_file: Path) -> str:
+    try:
+        return bridge_token_file.expanduser().read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
+def bridge_get_json(bridge_url: str, bridge_token_file: Path, path: str, *, timeout: int = 10) -> dict[str, object]:
+    token = _bridge_token(bridge_token_file)
+    request = urllib.request.Request(
+        bridge_url.rstrip("/") + path,
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    with urllib.request.urlopen(request, timeout=timeout) as response:
+        body = response.read().decode("utf-8")
+    data = json.loads(body)
+    if not isinstance(data, dict):
+        raise RuntimeError(f"Bridge returned non-object JSON from {path}: {body[:200]}")
+    return data
+
+
+def check_bridge_preflight(bridge_url: str, bridge_token_file: Path, *, self_test: bool) -> bool:
+    ok = True
+    print("Checking PowerPoint bridge...")
+    if not bridge_token_file.expanduser().exists():
+        print(f"FAIL bridge token file missing: {bridge_token_file.expanduser()}")
+        return False
+    try:
+        health = bridge_get_json(bridge_url, bridge_token_file, "/health", timeout=5)
+    except urllib.error.HTTPError as e:
+        print(f"FAIL bridge health HTTP {e.code}. Check bridge token/config.")
+        return False
+    except (urllib.error.URLError, TimeoutError, OSError) as e:
+        print(f"FAIL bridge is not reachable at {bridge_url}: {e}")
+        print("Start the bridge outside the Agent sandbox, then rerun doctor.")
+        return False
+    except Exception as e:
+        print(f"FAIL bridge health check failed: {e}")
+        return False
+    if health.get("ok"):
+        print(f"OK bridge reachable: {bridge_url}")
+    else:
+        print(f"FAIL bridge health returned: {health}")
+        return False
+
+    if self_test:
+        try:
+            result = bridge_get_json(bridge_url, bridge_token_file, "/self-test", timeout=12)
+        except Exception as e:
+            print(f"FAIL bridge PowerPoint Automation self-test could not run: {e}")
+            return False
+        if result.get("ok"):
+            print("OK bridge PowerPoint Automation self-test")
+        else:
+            ok = False
+            detail = str(result.get("stderr") or result.get("stdout") or result.get("message") or "").strip()
+            print("FAIL bridge PowerPoint Automation self-test")
+            if detail:
+                print(detail)
+            print("If the bridge was launched by Terminal, enable:")
+            print("System Settings > Privacy & Security > Automation > Terminal > Microsoft PowerPoint")
+            print("Then restart the bridge and rerun doctor.")
+    return ok
+
+
 def doctor(
     home: Path,
     *,
@@ -403,6 +470,19 @@ def doctor(
     mode = "bridge" if bridge_mode else "direct"
     print(f"Checking MCP tool inventory in {mode} mode" + (" and live PowerPoint smoke" if smoke_powerpoint else "") + "...")
     extra_env = bridge_env(bridge_url, bridge_token_file) if bridge_mode else None
+    if bridge_mode:
+        bridge_ok = check_bridge_preflight(bridge_url, bridge_token_file, self_test=smoke_powerpoint)
+        if not bridge_ok and smoke_powerpoint:
+            ok = False
+            print()
+            print("Skipping MCP live smoke because bridge preflight failed.")
+            print_config_snippets(
+                exe,
+                bridge_mode=bridge_mode,
+                bridge_url=bridge_url,
+                bridge_token_file=bridge_token_file,
+            )
+            return 1
     rc = verify_tools(py, exe, smoke_powerpoint=smoke_powerpoint, extra_env=extra_env)
     if rc != 0:
         ok = False

@@ -38,6 +38,10 @@ available.
    ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
    ```
 
+   The bridge startup script runs a short PowerPoint Automation self-test. If it
+   fails, the bridge still starts, but the terminal output explains which launcher
+   permission must be enabled.
+
    Then write WorkBuddy config in bridge mode and restart WorkBuddy:
 
    ```bash

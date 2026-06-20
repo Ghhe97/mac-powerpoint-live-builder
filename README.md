@@ -154,6 +154,8 @@ WorkBuddy 风格的 `mcp.json` 通常需要类似下面的 server block：
 ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
 ```
 
+启动时会先跑一个很短的 PowerPoint Automation self-test。如果失败，窗口里会直接提示应该给哪个启动器授权。
+
 注意：因为这个 bridge 是从终端启动的，所以 macOS 里还需要允许“终端”控制 Microsoft PowerPoint：
 
 ```text
@@ -436,6 +438,9 @@ Keep this running in a Terminal window:
 ```bash
 ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
 ```
+
+Startup runs a short PowerPoint Automation self-test. If it fails, the bridge
+window prints the launcher permission that needs to be enabled.
 
 Because the bridge is launched by Terminal, macOS must also allow Terminal to
 control Microsoft PowerPoint:

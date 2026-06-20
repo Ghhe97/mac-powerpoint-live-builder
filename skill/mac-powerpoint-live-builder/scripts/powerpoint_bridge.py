@@ -21,6 +21,14 @@ DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 18765
 DEFAULT_HOME = Path.home() / ".local" / "share" / "powerpoint-live-mcp"
 DEFAULT_TOKEN_FILE = DEFAULT_HOME / "bridge_token"
+SELF_TEST_SCRIPT = '''
+tell application "Microsoft PowerPoint"
+    try
+        activate
+    end try
+    return name
+end tell
+'''
 
 
 def ensure_token(path: Path) -> str:
@@ -63,6 +71,21 @@ def run_osascript(script: str, timeout: int) -> dict[str, Any]:
     }
 
 
+def automation_self_test(timeout: int = 8) -> dict[str, Any]:
+    result = run_osascript(SELF_TEST_SCRIPT, timeout)
+    result["check"] = "powerpoint_automation"
+    if result["ok"]:
+        result["message"] = "PowerPoint Automation is available to the bridge launcher."
+    else:
+        result["message"] = (
+            "The bridge is running, but its launcher cannot complete a PowerPoint "
+            "Automation call. If launched from Terminal, enable System Settings > "
+            "Privacy & Security > Automation > Terminal > Microsoft PowerPoint, "
+            "then restart the bridge."
+        )
+    return result
+
+
 class BridgeHandler(BaseHTTPRequestHandler):
     server_version = "PowerPointLiveBridge/0.1"
 
@@ -83,13 +106,21 @@ class BridgeHandler(BaseHTTPRequestHandler):
         return auth.startswith(bearer) and auth[len(bearer):].strip() == expected
 
     def do_GET(self) -> None:
-        if self.path != "/health":
+        if self.path == "/health":
+            if not self._authorized():
+                self._send_json(401, {"ok": False, "error": "unauthorized"})
+                return
+            self._send_json(200, {"ok": True, "service": "powerpoint-live-bridge"})
+            return
+        if self.path == "/self-test":
+            if not self._authorized():
+                self._send_json(401, {"ok": False, "error": "unauthorized"})
+                return
+            self._send_json(200, automation_self_test())
+            return
+        else:
             self._send_json(404, {"ok": False, "error": "not found"})
             return
-        if not self._authorized():
-            self._send_json(401, {"ok": False, "error": "unauthorized"})
-            return
-        self._send_json(200, {"ok": True, "service": "powerpoint-live-bridge"})
 
     def do_POST(self) -> None:
         if self.path != "/run-osascript":
@@ -117,9 +148,24 @@ def main() -> int:
     parser.add_argument("--host", default=DEFAULT_HOST, help="Bind host. Defaults to 127.0.0.1.")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT, help="Bind port.")
     parser.add_argument("--token-file", type=Path, default=DEFAULT_TOKEN_FILE, help="Bridge token file.")
+    parser.add_argument(
+        "--startup-self-test",
+        action="store_true",
+        help="Run a short PowerPoint Automation check before serving.",
+    )
     args = parser.parse_args()
 
     token = ensure_token(args.token_file.expanduser())
+    if args.startup_self_test:
+        print("Running PowerPoint Automation self-test...")
+        result = automation_self_test()
+        if result["ok"]:
+            print("OK PowerPoint Automation self-test")
+        else:
+            print("WARN PowerPoint Automation self-test failed")
+            print(result.get("stderr") or result.get("message"))
+            print("The bridge will still start so MCP clients can report this clearly.")
+
     server = ThreadingHTTPServer((args.host, args.port), BridgeHandler)
     server.bridge_token = token  # type: ignore[attr-defined]
     print("PowerPoint live bridge started")

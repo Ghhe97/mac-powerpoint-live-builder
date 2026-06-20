@@ -12,4 +12,4 @@ fi
 echo "Starting PowerPoint live bridge..."
 echo "Keep this window open while using WorkBuddy bridge mode."
 echo
-python3 "$BRIDGE"
+python3 "$BRIDGE" --startup-self-test
