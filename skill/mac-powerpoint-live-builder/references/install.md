@@ -30,10 +30,30 @@ available.
    startup.
 7. On first live use, macOS may ask whether the launching app may control Microsoft
    PowerPoint. The user must allow it.
-8. For real PowerPoint control diagnostics, run:
+8. If the Agent is WorkBuddy or another sandboxed runtime, and direct smoke tests
+   fail with `-10004` even after Automation permission is enabled, start the
+   bridge outside the Agent sandbox:
+
+   ```bash
+   ~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
+   ```
+
+   Then write WorkBuddy config in bridge mode and restart WorkBuddy:
+
+   ```bash
+   ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --write-workbuddy-config --bridge-mode
+   ```
+
+9. For real PowerPoint control diagnostics, run:
 
    ```bash
    python ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doctor --smoke-powerpoint
+   ```
+
+   In WorkBuddy bridge mode, run:
+
+   ```bash
+   python ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doctor --smoke-powerpoint --bridge-mode
    ```
 
    This creates and closes a tiny presentation through MCP. Use it only when opening
@@ -47,10 +67,14 @@ available.
 - Checks for Microsoft PowerPoint.
 - Checks for `pdftoppm`; if missing, tells the user to install Homebrew `poppler`.
 - Optionally writes a managed Codex MCP block to `~/.codex/config.toml`.
+- Optionally writes or updates WorkBuddy MCP config with
+  `--write-workbuddy-config`.
 - Prints Codex TOML, generic stdio MCP JSON, and a WorkBuddy-style server block.
 - Verifies the installed server exposes the expected `pptx_*` tools.
 - With `--smoke-powerpoint`, verifies the MCP server can actually control
   PowerPoint, not just list tools.
+- In `--bridge-mode`, configures the MCP server to proxy AppleScript through a
+  localhost bridge process started outside the Agent sandbox.
 
 ## Other Agent Products
 
@@ -80,6 +104,30 @@ For WorkBuddy-style `mcp.json`, use the printed server block shape:
 }
 ```
 
+If direct WorkBuddy control fails with `-10004` after Automation permission is
+enabled, use bridge mode. The bridge is a local HTTP server bound to
+`127.0.0.1` and protected by a token file. It runs AppleScript outside the
+WorkBuddy sandbox, while WorkBuddy's MCP process only talks to localhost.
+
+Start the bridge:
+
+```bash
+~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
+```
+
+Write WorkBuddy config:
+
+```bash
+~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --write-workbuddy-config --bridge-mode
+```
+
+The resulting server env includes:
+
+```text
+POWERPOINT_LIVE_BRIDGE_URL=http://127.0.0.1:18765
+POWERPOINT_LIVE_BRIDGE_TOKEN_FILE=~/.local/share/powerpoint-live-mcp/bridge_token
+```
+
 ## Troubleshooting
 
 - `install_mcp.py --check` passes but the Agent cannot call `pptx_*`: the server is
@@ -88,7 +136,9 @@ For WorkBuddy-style `mcp.json`, use the printed server block shape:
 - `-1708` or `"activate" can't continue`: PowerPoint rejected foreground activation.
   Use the updated server, which wraps `activate` in `try/end try`.
 - `-10004`, `not authorized`, or Automation permission errors: open macOS System
-  Settings > Privacy & Security > Automation and allow the app that launched the
-  MCP server to control Microsoft PowerPoint.
+  Settings > Privacy & Security > Automation and allow the app that launched
+  AppleScript to control Microsoft PowerPoint. If that checkbox is already enabled
+  for the Agent but smoke still fails, the Agent is likely running MCP in a
+  restricted sandbox; use bridge mode.
 - If live control fails and the Agent uses `python-pptx` or another file-only
   method, label the result as a non-live fallback.

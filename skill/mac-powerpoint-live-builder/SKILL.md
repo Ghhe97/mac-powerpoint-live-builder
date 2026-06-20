@@ -10,7 +10,11 @@ Microsoft PowerPoint for Mac app, not a static image or file-only OOXML rewrite.
 
 The skill includes a bundled local MCP server installer. It does not require an
 API token; it does require macOS Automation permission for the process that
-launches the MCP server.
+launches AppleScript. Some Agent products run MCP inside a sandbox that cannot
+send AppleEvents even when the app appears in macOS Automation settings. For
+those products, use bridge mode: run `scripts/powerpoint_bridge.py` outside the
+Agent sandbox, then configure MCP with `POWERPOINT_LIVE_BRIDGE_URL` and
+`POWERPOINT_LIVE_BRIDGE_TOKEN_FILE`.
 
 ## Workflow
 
@@ -68,6 +72,20 @@ If the current Agent product is not Codex, run the installer without
 that product's MCP settings. Restart the Agent if it loads MCP servers only at
 startup.
 
+For WorkBuddy or another sandboxed Agent that fails live smoke tests with
+`-10004` even after Automation permission is enabled, use bridge mode:
+
+```bash
+~/.codex/skills/mac-powerpoint-live-builder/scripts/start_bridge.command
+~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --write-workbuddy-config --bridge-mode
+```
+
+Then restart WorkBuddy and run:
+
+```bash
+~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doctor --smoke-powerpoint --bridge-mode
+```
+
 `scripts/check_pptx_mcp.py` verifies that a server executable starts and exposes
 the expected `pptx_*` live-build tools. Add `--smoke-powerpoint` only when you
 want it to create and close a tiny PowerPoint presentation through MCP.
@@ -80,8 +98,9 @@ python ~/.codex/skills/mac-powerpoint-live-builder/scripts/install_mcp.py --doct
 
 If `osascript` reports `-1708`, suspect foreground activation and retry with the
 updated server that wraps `activate` in `try/end try`. If it reports `-10004` or
-`not authorized`, check macOS Automation permission for the app that launched the
-MCP server.
+`not authorized`, check macOS Automation permission for the app that launched
+AppleScript. If permission is already enabled and the Agent is sandboxed, switch
+to bridge mode instead of reporting live success.
 
 Expected core tools:
 

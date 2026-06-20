@@ -32,7 +32,10 @@ batch by slide if one call becomes slow or hard to debug.
 - PowerPoint is sandboxed. Thumbnail/PDF export should use the PowerPoint container
   temp path internally, then copy outputs to the requested path.
 - macOS may prompt for Automation permission. If tools fail with permission or
-  AppleEvent errors, ask the user to allow the launcher to control PowerPoint.
+  AppleEvent errors, ask the user to allow the process that runs AppleScript to
+  control PowerPoint. In sandboxed Agents such as some WorkBuddy builds, direct
+  MCP can still fail after the checkbox is enabled; use bridge mode and keep the
+  bridge process running outside the Agent sandbox.
 - A successful MCP inventory check only proves the server can list tools. It does
   not prove the active Agent session can call those tools or that PowerPoint
   Automation works. Use a real MCP smoke when diagnosing live control.

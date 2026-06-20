@@ -27,7 +27,10 @@ fi
 echo "Installing skill to:"
 echo "  $DEST_SKILL"
 cp -R "$SOURCE_SKILL" "$DEST_SKILL"
-chmod +x "$DEST_SKILL/scripts/install_mcp.py" "$DEST_SKILL/scripts/check_pptx_mcp.py"
+chmod +x "$DEST_SKILL/scripts/install_mcp.py" \
+  "$DEST_SKILL/scripts/check_pptx_mcp.py" \
+  "$DEST_SKILL/scripts/powerpoint_bridge.py" \
+  "$DEST_SKILL/scripts/start_bridge.command"
 
 echo
 echo "Installing bundled PowerPoint MCP server..."
@@ -40,10 +43,17 @@ echo "Next steps:"
 echo "1. Restart Codex or your Agent app."
 echo "2. Open Microsoft PowerPoint."
 echo "3. On first use, allow macOS Automation permission to control PowerPoint."
-echo "4. For WorkBuddy or another stdio MCP Agent, copy the JSON block printed above"
+echo "4. For WorkBuddy sandbox mode, start the bridge outside WorkBuddy:"
+echo "   $DEST_SKILL/scripts/start_bridge.command"
+echo "   Then run:"
+echo "   $DEST_SKILL/scripts/install_mcp.py --write-workbuddy-config --bridge-mode"
+echo "   Restart WorkBuddy after that config update."
+echo "5. For another stdio MCP Agent, copy the JSON block printed above"
 echo "   into that product's MCP settings, then restart the Agent."
-echo "5. To verify real PowerPoint control after restart, run:"
+echo "6. To verify real PowerPoint control after restart, run:"
 echo "   $DEST_SKILL/scripts/install_mcp.py --doctor --smoke-powerpoint"
+echo "   or, for WorkBuddy bridge mode:"
+echo "   $DEST_SKILL/scripts/install_mcp.py --doctor --smoke-powerpoint --bridge-mode"
 echo
 echo "Try:"
 echo "  Use \$mac-powerpoint-live-builder to create a three-slide research deck."

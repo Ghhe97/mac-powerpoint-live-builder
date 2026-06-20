@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import glob
 import io
+import json
 import logging
 import math
 import os
@@ -37,6 +38,8 @@ import shutil
 import subprocess
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP, Image
@@ -53,6 +56,10 @@ POWERPOINT_SANDBOX_TMP = os.path.expanduser(
     "~/Library/Containers/com.microsoft.Powerpoint/Data/tmp/pptx-live-mcp"
 )
 
+BRIDGE_URL_ENV = "POWERPOINT_LIVE_BRIDGE_URL"
+BRIDGE_TOKEN_ENV = "POWERPOINT_LIVE_BRIDGE_TOKEN"
+BRIDGE_TOKEN_FILE_ENV = "POWERPOINT_LIVE_BRIDGE_TOKEN_FILE"
+
 
 # --- AppleScript runner ---------------------------------------------------
 
@@ -61,9 +68,85 @@ def _escape_applescript_string(s: str) -> str:
     return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
+def _osascript_error_message(returncode: int, detail: str) -> str:
+    hint = ""
+    if "-1708" in detail:
+        hint = (
+            " Hint: PowerPoint rejected 'activate'. This usually means the "
+            "launcher cannot bring PowerPoint to the foreground; wrap activate "
+            "in try/end try or continue without foreground focus."
+        )
+    elif "-10004" in detail or "not authorized" in detail.lower() or "权限" in detail:
+        bridge_url = os.environ.get(BRIDGE_URL_ENV, "").strip()
+        if bridge_url:
+            hint = (
+                " Hint: macOS Automation blocked AppleEvents even through the "
+                "PowerPoint bridge. Start the bridge from Terminal/Codex and allow "
+                "that app to control Microsoft PowerPoint."
+            )
+        else:
+            hint = (
+                " Hint: macOS Automation may be blocking AppleEvents. Check "
+                "System Settings > Privacy & Security > Automation for the app "
+                "that launched this MCP server, or use WorkBuddy bridge mode."
+            )
+    return f"osascript failed (exit {returncode}): {detail}{hint}"
+
+
+def _bridge_token() -> str:
+    token = os.environ.get(BRIDGE_TOKEN_ENV, "").strip()
+    if token:
+        return token
+    token_file = os.environ.get(BRIDGE_TOKEN_FILE_ENV, "").strip()
+    if token_file:
+        try:
+            with open(os.path.expanduser(token_file), encoding="utf-8") as fh:
+                return fh.read().strip()
+        except OSError:
+            return ""
+    return ""
+
+
+def _run_osascript_via_bridge(script: str, timeout: int) -> str:
+    bridge_url = os.environ.get(BRIDGE_URL_ENV, "").strip().rstrip("/")
+    if not bridge_url:
+        raise RuntimeError("bridge URL is empty")
+    payload = json.dumps({"script": script, "timeout": timeout}).encode("utf-8")
+    request = urllib.request.Request(
+        f"{bridge_url}/run-osascript",
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {_bridge_token()}",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout + 10) as response:
+            body = response.read().decode("utf-8")
+    except urllib.error.HTTPError as e:
+        body = e.read().decode("utf-8", errors="replace")
+        raise RuntimeError(f"PowerPoint bridge HTTP {e.code}: {body}") from e
+    except urllib.error.URLError as e:
+        raise RuntimeError(
+            f"PowerPoint bridge is not reachable at {bridge_url}. Start the bridge outside the Agent sandbox."
+        ) from e
+    try:
+        result = json.loads(body)
+    except json.JSONDecodeError as e:
+        raise RuntimeError(f"PowerPoint bridge returned invalid JSON: {body[:500]}") from e
+    if not result.get("ok"):
+        detail = (result.get("stderr") or result.get("stdout") or result.get("error") or "").strip()
+        returncode = int(result.get("returncode", 1))
+        raise RuntimeError(_osascript_error_message(returncode, detail))
+    return str(result.get("stdout", "")).strip()
+
+
 def _run_osascript(script: str, timeout: int = 60) -> str:
     """Run an AppleScript via osascript and return stdout."""
     logger.debug("Running AppleScript:\n%s", script)
+    if os.environ.get(BRIDGE_URL_ENV, "").strip():
+        return _run_osascript_via_bridge(script, timeout)
     try:
         result = subprocess.run(
             ["osascript", "-e", script],
@@ -76,22 +159,7 @@ def _run_osascript(script: str, timeout: int = 60) -> str:
         raise RuntimeError(f"osascript timed out after {timeout}s") from e
     if result.returncode != 0:
         detail = result.stderr.strip() or result.stdout.strip()
-        hint = ""
-        if "-1708" in detail:
-            hint = (
-                " Hint: PowerPoint rejected 'activate'. This usually means the "
-                "launcher cannot bring PowerPoint to the foreground; wrap activate "
-                "in try/end try or continue without foreground focus."
-            )
-        elif "-10004" in detail or "not authorized" in detail.lower() or "权限" in detail:
-            hint = (
-                " Hint: macOS Automation may be blocking AppleEvents. Check "
-                "System Settings > Privacy & Security > Automation for the app "
-                "that launched this MCP server, then allow Microsoft PowerPoint."
-            )
-        raise RuntimeError(
-            f"osascript failed (exit {result.returncode}): {detail}{hint}"
-        )
+        raise RuntimeError(_osascript_error_message(result.returncode, detail))
     return result.stdout.strip()
 
 
@@ -719,6 +787,7 @@ def pptx_add_shape(
     name_line = _set_shape_name_line("newShape", resolved_shape_name)
     z_line = f"z order targetShape z order position {_z_order_enum(z_order)}" if z_order else ""
     safe_resolved_name = _escape_applescript_string(resolved_shape_name)
+    style_block = "\n    ".join(line for line in [*style_lines, z_line] if line)
 
     script = f'''
 tell application "Microsoft PowerPoint"
@@ -738,7 +807,7 @@ tell application "Microsoft PowerPoint"
     if targetShape is missing value then
         error "Could not refetch shape named '{safe_resolved_name}' after creation"
     end if
-    {"\n    ".join(line for line in [*style_lines, z_line] if line)}
+    {style_block}
     return "ok"
 end tell
 '''
@@ -805,6 +874,7 @@ def pptx_add_text_box(
     font_name_line = f'set font name of font of tr to "{safe_font}"' if safe_font else ""
     z_line = f"z order targetShape z order position {_z_order_enum(z_order)}" if z_order else ""
     safe_resolved_name = _escape_applescript_string(resolved_shape_name)
+    style_block = "\n    ".join(style_lines)
     font_lines = "\n        ".join(
         line for line in [
             f'set content of tr to "{safe_text}"',
@@ -842,7 +912,7 @@ tell application "Microsoft PowerPoint"
     if targetShape is missing value then
         error "Could not refetch text box named '{safe_resolved_name}' after creation"
     end if
-    {"\n    ".join(style_lines)}
+    {style_block}
     set tr to text range of text frame of targetShape
         {font_lines}
     return "ok"
