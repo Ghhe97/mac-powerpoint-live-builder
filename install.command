@@ -29,6 +29,7 @@ echo "  $DEST_SKILL"
 cp -R "$SOURCE_SKILL" "$DEST_SKILL"
 chmod +x "$DEST_SKILL/scripts/install_mcp.py" \
   "$DEST_SKILL/scripts/check_pptx_mcp.py" \
+  "$DEST_SKILL/scripts/run_pptx_sequence.py" \
   "$DEST_SKILL/scripts/powerpoint_bridge.py" \
   "$DEST_SKILL/scripts/start_bridge.command"
 

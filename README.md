@@ -178,6 +178,26 @@ WorkBuddy 风格的 `mcp.json` 通常需要类似下面的 server block：
 
 如果 bridge 模式报 `osascript timed out after 60s`，通常就是上面的“终端 -> Microsoft PowerPoint”权限还没打开。打开后重启 bridge，再跑验证。
 
+如果你的 Agent 能运行本地脚本，但没有直接把 `pptx_*` MCP tools 暴露给模型，可以使用 sequence runner。它仍然会通过 MCP live 控制 PowerPoint，不是离线生成：
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode sequence.json
+```
+
+快速端到端测试：
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+给 WorkBuddy 这类 Agent 下指令时，尽量让它执行这种“一行命令”。不要让它临时拼多行 heredoc 或内联 Python 来调试；有些命令包装器会把引号拼坏。真正生成 PPT 时，把复杂步骤写成 JSON 文件，再把 JSON 路径交给 `run_pptx_sequence.py`。
+
+如果 WorkBuddy 的沙盒代理 localhost HTTP 不稳定，优先使用 delegated bridge runner。WorkBuddy 只发一次请求给 bridge，完整 live 生成由 bridge 在沙盒外完成：
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --delegate-to-bridge --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
 如果要确认不只是“能列出工具”，还是真的能控制 PowerPoint，可以运行：
 
 ```bash
@@ -201,6 +221,7 @@ mac-powerpoint-live-builder/
       scripts/
         install_mcp.py
         check_pptx_mcp.py
+        run_pptx_sequence.py
         powerpoint_bridge.py
         start_bridge.command
       vendor/
@@ -254,6 +275,14 @@ macOS 会保护应用之间的自动化控制。第一次让 Agent 控制 PowerP
 如果你已经打开权限但 WorkBuddy 仍然失败，通常不是 PowerPoint 或 MCP 坏了，而是 WorkBuddy 的 MCP 子进程在沙盒里。请使用上面的 WorkBuddy 桥接模式。
 
 如果桥接模式从终端启动后变成超时，请确认“终端”也被允许控制 Microsoft PowerPoint。
+
+### bridge `/run-osascript` 返回 `HTTP 400` 怎么办？
+
+这说明请求到达了 bridge，但请求体不是合法 JSON，或缺少 `script` 字段。优先使用上面的“一行 runner/doctor 命令”，并查看 bridge 返回里的 `content_length` 和 `body_preview`。
+
+### WorkBuddy runner 随机在某个 step `timed out` 怎么办？
+
+这通常是 WorkBuddy 的 localhost 代理偶发丢 POST body。改用 `run_pptx_sequence.py --delegate-to-bridge`，让 WorkBuddy 只发一次请求，后续 live sequence 全部由 bridge 在沙盒外执行。
 
 ### 如果 live 失败，能不能先离线生成 PPTX？
 
@@ -468,6 +497,33 @@ If bridge mode reports `osascript timed out after 60s`, Terminal is usually not
 authorized to control PowerPoint. Enable that checkbox, restart the bridge, and
 run the smoke test again.
 
+If your Agent can run local scripts but does not expose `pptx_*` MCP tools
+directly, use the sequence runner. It still calls MCP and builds live in
+PowerPoint:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode sequence.json
+```
+
+Quick end-to-end smoke deck:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+For WorkBuddy-style Agents, ask the Agent to run one-line commands like the
+examples above. Avoid ad-hoc multi-line heredocs or inline Python diagnostics;
+some Agent command wrappers quote those incorrectly. For real decks, write the
+complex steps to a JSON file, then pass that file to `run_pptx_sequence.py`.
+
+If WorkBuddy's sandbox proxies localhost HTTP unreliably, prefer delegated bridge
+runner mode. WorkBuddy sends one request to the bridge, and the bridge runs the
+full live build outside the sandbox:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --delegate-to-bridge --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
 To verify real PowerPoint control, not just tool listing, run:
 
 ```bash
@@ -491,6 +547,7 @@ mac-powerpoint-live-builder/
       scripts/
         install_mcp.py
         check_pptx_mcp.py
+        run_pptx_sequence.py
         powerpoint_bridge.py
         start_bridge.command
       vendor/
@@ -536,6 +593,18 @@ Open macOS System Settings -> Privacy & Security -> Automation, then allow the A
 If WorkBuddy still fails after that checkbox is enabled, use WorkBuddy bridge mode. The likely blocker is the MCP subprocess sandbox, not the PowerPoint MCP code itself.
 
 If bridge mode is launched from Terminal and then times out, also allow Terminal to control Microsoft PowerPoint.
+
+### Bridge `/run-osascript` returns `HTTP 400`
+
+The request reached the bridge, but the body was not valid JSON or missed the
+required `script` field. Prefer the one-line runner/doctor commands above, and
+inspect `content_length` plus `body_preview` in the bridge response.
+
+### WorkBuddy runner randomly times out at a sequence step
+
+WorkBuddy's localhost proxy may be dropping POST bodies. Use
+`run_pptx_sequence.py --delegate-to-bridge` so only one request crosses the
+WorkBuddy sandbox; the bridge runs the full live sequence outside the sandbox.
 
 ### Can I fall back to offline PPTX generation?
 

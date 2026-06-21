@@ -84,6 +84,8 @@ available.
   PowerPoint, not just list tools.
 - In `--bridge-mode`, configures the MCP server to proxy AppleScript through a
   localhost bridge process started outside the Agent sandbox.
+- Provides `scripts/run_pptx_sequence.py`, a CLI helper for Agent products that
+  can run local scripts but do not mount `pptx_*` tools directly.
 
 ## Other Agent Products
 
@@ -137,11 +139,46 @@ POWERPOINT_LIVE_BRIDGE_URL=http://127.0.0.1:18765
 POWERPOINT_LIVE_BRIDGE_TOKEN_FILE=~/.local/share/powerpoint-live-mcp/bridge_token
 ```
 
+If the Agent cannot call MCP tools directly but can run scripts, use the sequence
+runner. It still calls `pptx_run_live_sequence` through MCP:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode sequence.json
+```
+
+Quick end-to-end smoke deck:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+For WorkBuddy-style command runners, keep diagnostics and smoke tests as one-line
+commands. Avoid asking the Agent to generate multi-line heredocs or inline Python;
+its shell wrapper may quote them incorrectly. For real decks, save the sequence as
+JSON, then pass the JSON path to `run_pptx_sequence.py`.
+
+If WorkBuddy's sandbox proxies localhost HTTP unreliably, prefer delegated bridge
+runner mode:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --delegate-to-bridge --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+Delegated mode sends one token-protected request to the bridge; the bridge runs
+the full live sequence outside the WorkBuddy sandbox.
+
 ## Troubleshooting
 
 - `install_mcp.py --check` passes but the Agent cannot call `pptx_*`: the server is
   installed, but the active Agent session has not mounted it. Add the MCP config
   and restart the Agent.
+- Bridge `HTTP 400` on `/run-osascript`: the bridge received a request, but the
+  request was not valid JSON or missed the required `script` field. Use the
+  one-line runner/doctor commands instead of ad-hoc inline scripts, and inspect
+  the bridge response for `content_length` and `body_preview`.
+- WorkBuddy runner fails at random sequence steps with `timed out`: its localhost
+  proxy may be dropping POST bodies. Use `run_pptx_sequence.py
+  --delegate-to-bridge` so only one request crosses the WorkBuddy sandbox.
 - `-1708` or `"activate" can't continue`: PowerPoint rejected foreground activation.
   Use the updated server, which wraps `activate` in `try/end try`.
 - `-10004`, `not authorized`, or Automation permission errors: open macOS System

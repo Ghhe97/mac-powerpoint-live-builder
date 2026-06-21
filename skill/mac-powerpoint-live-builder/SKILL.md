@@ -41,6 +41,37 @@ Agent sandbox, then configure MCP with `POWERPOINT_LIVE_BRIDGE_URL` and
 10. Inspect thumbnails. Fix overlap, illegible text, weak contrast, bad colors,
    missing sources, and low information density before final delivery.
 
+If the current Agent can run local scripts but does not expose `pptx_*` MCP tools
+directly, write the live sequence to JSON and run it through the bundled helper:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode sequence.json
+```
+
+For an end-to-end live smoke deck:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --bridge-mode --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+This helper still uses `pptx_run_live_sequence` through the local MCP server; it
+is not an offline PPTX fallback.
+
+For WorkBuddy-style Agents, prefer one-line shell commands like the examples
+above. Do not ask the Agent to invent multi-line heredocs or inline Python for
+diagnostics; those are easy for Agent command wrappers to quote incorrectly. Put
+complex deck steps in a JSON file and pass that file to `run_pptx_sequence.py`.
+
+If WorkBuddy's command sandbox proxies localhost HTTP unreliably, use delegated
+bridge runner mode instead:
+
+```bash
+~/.workbuddy/skills/mac-powerpoint-live-builder/scripts/run_pptx_sequence.py --delegate-to-bridge --demo-pptx ~/Desktop/powerpoint-live-smoke.pptx
+```
+
+In delegated mode, WorkBuddy sends one token-protected request to the bridge; the
+bridge runs the full live sequence outside the WorkBuddy sandbox.
+
 For exact sequence patterns, QA checks, and Mac-specific pitfalls, read
 `references/workflow.md` before implementing a deck.
 
@@ -118,6 +149,10 @@ Expected core tools:
 - `pptx_save_presentation`
 - `pptx_get_slide_thumbnail`
 - `pptx_get_deck_overview`
+
+Script helper for non-direct MCP runtimes:
+
+- `scripts/run_pptx_sequence.py`
 
 ## Delivery
 

@@ -128,25 +128,49 @@ def _run_osascript_via_bridge(script: str, timeout: int) -> str:
     if not bridge_url:
         raise RuntimeError("bridge URL is empty")
     payload = json.dumps({"script": script, "timeout": timeout}).encode("utf-8")
-    request = urllib.request.Request(
-        f"{bridge_url}/run-osascript",
-        data=payload,
-        headers={
-            "Content-Type": "application/json",
-            "Authorization": f"Bearer {_bridge_token()}",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout + 10) as response:
-            body = response.read().decode("utf-8")
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"PowerPoint bridge HTTP {e.code}: {body}") from e
-    except urllib.error.URLError as e:
-        raise RuntimeError(
-            f"PowerPoint bridge is not reachable at {bridge_url}. Start the bridge outside the Agent sandbox."
-        ) from e
+    body = ""
+    last_http_error: tuple[int, str] | None = None
+    for attempt in range(1, 4):
+        request = urllib.request.Request(
+            f"{bridge_url}/run-osascript",
+            data=payload,
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {_bridge_token()}",
+                # Some Agent sandboxes proxy localhost HTTP. Closing each request
+                # avoids stale proxy connections that can drop POST bodies.
+                "Connection": "close",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=timeout + 10) as response:
+                body = response.read().decode("utf-8")
+            break
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8", errors="replace")
+            last_http_error = (e.code, error_body)
+            retryable_empty_body = (
+                e.code == 400
+                and ("empty JSON body" in error_body or '"body_preview": ""' in error_body)
+                and attempt < 3
+            )
+            if retryable_empty_body:
+                time.sleep(0.35 * attempt)
+                continue
+            raise RuntimeError(f"PowerPoint bridge HTTP {e.code}: {error_body}") from e
+        except urllib.error.URLError as e:
+            if attempt < 3:
+                time.sleep(0.35 * attempt)
+                continue
+            raise RuntimeError(
+                f"PowerPoint bridge is not reachable at {bridge_url}. Start the bridge outside the Agent sandbox."
+            ) from e
+    else:
+        if last_http_error:
+            code, error_body = last_http_error
+            raise RuntimeError(f"PowerPoint bridge HTTP {code}: {error_body}")
+        raise RuntimeError(f"PowerPoint bridge is not reachable at {bridge_url}.")
     try:
         result = json.loads(body)
     except json.JSONDecodeError as e:
@@ -2220,7 +2244,15 @@ def pptx_save_presentation(
         parent = os.path.dirname(target)
         if parent:
             os.makedirs(parent, exist_ok=True)
-        safe_path = _escape_applescript_string(target)
+        if os.path.commonpath([os.path.abspath(POWERPOINT_SANDBOX_TMP), target]) == os.path.abspath(POWERPOINT_SANDBOX_TMP):
+            powerpoint_target = target
+            copy_after_save = False
+        else:
+            tmp_dir = _sandbox_tmp_dir("save-")
+            filename = os.path.basename(target) or "presentation.pptx"
+            powerpoint_target = os.path.join(tmp_dir, filename)
+            copy_after_save = True
+        safe_path = _escape_applescript_string(powerpoint_target)
         script = f'''
 tell application "Microsoft PowerPoint"
     set p to active presentation
@@ -2238,6 +2270,11 @@ end tell
 '''
     out = _run_osascript(script, timeout=120)
     name, _, full = out.partition("|")
+    if save_as_path and copy_after_save:
+        if not os.path.exists(powerpoint_target):
+            raise RuntimeError(f"PowerPoint reported save success but file is missing: {powerpoint_target}")
+        shutil.copy2(powerpoint_target, target)
+        return {"name": name, "path": target, "powerpoint_internal_path": full}
     return {"name": name, "path": full}
 
 
